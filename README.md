@@ -1,0 +1,1215 @@
+[index.html](https://github.com/user-attachments/files/29676664/index.html)
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>画廊 · 私人画作</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Noto Sans SC", "PingFang SC", sans-serif;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    overflow-x: hidden;
+  }
+  ::selection { background: rgba(200, 160, 120, .4); }
+
+  /* ─── Entry Lock ─── */
+  .entry-lock {
+    position: fixed; inset: 0; z-index: 500;
+    background: #0a0a0a;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .entry-lock.hidden { display: none; }
+  .entry-box {
+    text-align: center;
+    animation: modalIn .4s ease;
+  }
+  .entry-box .icon {
+    width: 56px; height: 56px; margin: 0 auto 16px;
+    fill: none; stroke: #555; stroke-width: 1.5;
+  }
+  .entry-box h1 { font-size: 20px; font-weight: 500; letter-spacing: 3px; margin-bottom: 4px; }
+  .entry-box p { font-size: 13px; color: #666; margin-bottom: 24px; }
+  .entry-box input {
+    width: 240px; padding: 12px 16px;
+    background: #111; border: 1px solid #2a2a2a;
+    border-radius: 10px; color: #e0e0e0; font-size: 18px;
+    text-align: center; outline: none; letter-spacing: 6px;
+    font-family: inherit; transition: border-color .2s;
+  }
+  .entry-box input:focus { border-color: #555; }
+  .entry-box .error { color: #d32f2f; font-size: 13px; margin-top: 10px; display: none; }
+  .entry-box button {
+    margin-top: 16px; padding: 10px 40px;
+    background: #c8a078; color: #0a0a0a;
+    border: none; border-radius: 8px; font-size: 14px;
+    cursor: pointer; font-family: inherit; font-weight: 500;
+    transition: background .2s;
+  }
+  .entry-box button:hover { background: #dbb08a; }
+
+  /* ─── Nav ─── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center;
+    padding: 16px 36px;
+    background: linear-gradient(180deg, rgba(10,10,10,.95) 60%, transparent);
+  }
+  nav .brand { font-size: 18px; font-weight: 500; letter-spacing: 2px; margin-right: auto; }
+  nav .counter { font-size: 13px; color: #888; font-variant-numeric: tabular-nums; margin-right: 24px; }
+
+  /* ─── Mode Switch ─── */
+  .mode-switch {
+    display: flex; align-items: center; gap: 8px;
+    background: #181818;
+    border-radius: 8px; padding: 3px;
+  }
+  .mode-btn {
+    padding: 6px 14px; border: none; background: none;
+    color: #666; font-size: 12px; cursor: pointer;
+    border-radius: 6px; transition: all .25s;
+    display: flex; align-items: center; gap: 5px;
+    font-family: inherit;
+  }
+  .mode-btn svg { width: 15px; height: 15px; fill: currentColor; flex-shrink: 0; }
+  .mode-btn.active { background: #2a2a2a; color: #e0e0e0; }
+  .mode-btn:not(.active):hover { color: #999; }
+
+  /* ─── Gallery Grid ─── */
+  .gallery { padding: 76px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 28px;
+  }
+
+  .card {
+    position: relative;
+    background: #141414;
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform .35s cubic-bezier(.25,.46,.45,.94),
+                box-shadow .35s ease;
+    aspect-ratio: 4 / 3;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid #1e1e1e;
+  }
+  .card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 20px 40px rgba(0,0,0,.5);
+    border-color: #333;
+  }
+  .card img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transition: transform .5s ease;
+    -webkit-user-drag: none; user-select: none;
+  }
+  .card:hover img { transform: scale(1.04); }
+
+  .card .info {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 40px 18px 16px;
+    background: linear-gradient(transparent, rgba(0,0,0,.8));
+    opacity: 0;
+    transition: opacity .35s ease;
+  }
+  .card:hover .info { opacity: 1; }
+  .card .info .title { font-size: 15px; font-weight: 500; margin-bottom: 2px; }
+  .card .info .meta { font-size: 12px; color: #999; }
+
+  /* ─── card delete (dev) ─── */
+  .card .delete-btn {
+    position: absolute; top: 10px; right: 10px;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(200,50,50,.85);
+    border: none; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    transition: background .2s, transform .2s;
+    z-index: 5;
+  }
+  .card .delete-btn:hover { background: #d32f2f; transform: scale(1.1); }
+  .card .delete-btn svg { width: 16px; height: 16px; fill: #fff; }
+  .dev-mode .card .delete-btn { display: flex; }
+
+  /* ─── Lightbox ─── */
+  .lightbox {
+    display: none;
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,.92);
+    align-items: center; justify-content: center;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 40px;
+  }
+  .lightbox.open {
+    display: flex;
+    overflow-y: auto;
+  }
+  .lightbox .close {
+    position: absolute; top: 24px; right: 32px;
+    font-size: 28px; color: #888; cursor: pointer;
+    background: none; border: none; z-index: 10;
+    transition: color .2s;
+  }
+  .lightbox .close:hover { color: #fff; }
+
+  .lightbox .nav-btn {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-size: 32px; color: #666; cursor: pointer;
+    background: none; border: none; padding: 20px 12px;
+    transition: color .2s;
+  }
+  .lightbox .nav-btn:hover { color: #fff; }
+  .lightbox .nav-btn.prev { left: 16px; }
+  .lightbox .nav-btn.next { right: 16px; }
+
+  .lightbox figure {
+    max-width: 90vw;
+    max-height: 85vh;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .lightbox figure img {
+    max-width: 100%;
+    max-height: 78vh;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6);
+    -webkit-user-drag: none; user-select: none;
+  }
+  .lightbox figure figcaption {
+    margin-top: 16px;
+    text-align: center;
+  }
+  .lightbox figure figcaption .title {
+    font-size: 17px; font-weight: 500;
+  }
+  .lightbox figure figcaption .desc {
+    font-size: 13px; color: #999; margin-top: 4px;
+  }
+
+  /* ─── Like & Comments ─── */
+  .lb-social {
+    margin-top: 16px;
+    width: 100%; max-width: 440px;
+    max-height: 260px;
+    display: flex; flex-direction: column;
+  }
+  .like-row {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+  }
+  .like-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: none; border: 2px solid #333;
+    color: #888; padding: 5px 16px; border-radius: 20px;
+    cursor: pointer; font-size: 13px; font-family: inherit;
+    transition: all .2s;
+  }
+  .like-btn:hover { border-color: #e04; color: #e04; }
+  .like-btn.liked { border-color: #e04; color: #fff; background: #c81e3a; border-width: 2px; }
+  .like-btn.liked:hover { background: #e04; }
+  .like-btn svg { width: 16px; height: 16px; fill: currentColor; flex-shrink: 0; }
+
+  .comment-area {
+    margin-top: 4px;
+    display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  .comment-list {
+    flex: 1;
+    max-height: 160px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 6px;
+    margin-bottom: 8px;
+    scrollbar-width: thin; scrollbar-color: #333 transparent;
+    padding-right: 4px;
+  }
+  .comment-list:empty { display: none; }
+  .comment-list::-webkit-scrollbar { width: 4px; }
+  .comment-list::-webkit-scrollbar-track { background: transparent; }
+  .comment-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  .comment-item {
+    background: #141414; border-radius: 8px;
+    padding: 8px 12px; text-align: left;
+    position: relative;
+  }
+  .comment-item.pinned { border-left: 3px solid #c8a078; background: #1a1816; }
+  .comment-item .text { font-size: 13px; color: #ccc; word-break: break-word; }
+  .comment-item .meta { font-size: 11px; color: #555; margin-top: 3px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .comment-item .meta .tag { font-size: 10px; background: #c8a07822; color: #c8a078; padding: 1px 6px; border-radius: 4px; }
+  .comment-item .meta .del-tag { font-size: 10px; background: #c81e3a22; color: #e04; padding: 1px 6px; border-radius: 4px; }
+  .comment-item .actions { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+  .comment-item .actions button {
+    background: none; border: 1px solid #333;
+    color: #888; padding: 2px 10px; border-radius: 4px;
+    cursor: pointer; font-size: 11px; font-family: inherit;
+    transition: all .2s;
+  }
+  .comment-item .actions button:hover { border-color: #555; color: #ccc; }
+  .comment-item .actions button.del:hover { border-color: #e04; color: #e04; }
+  .comment-item .actions button.arb-on { border-color: #c8a078; color: #c8a078; }
+  .comment-item .actions button.vote-del { border-color: #e04; color: #e04; }
+  .comment-item .actions button.vote-keep { border-color: #4caf50; color: #4caf50; }
+
+  /* arbitration panel */
+  .arb-panel {
+    background: #1a1a1a; border: 1px solid #2a2a2a;
+    border-radius: 8px; padding: 10px 14px; margin-top: 6px;
+  }
+  .arb-panel .title { font-size: 12px; color: #c8a078; margin-bottom: 6px; }
+  .arb-panel .vote-row { display: flex; gap: 8px; margin-bottom: 4px; }
+  .arb-panel .vote-row button {
+    flex: 1; padding: 6px; border-radius: 6px; border: 1px solid #333;
+    background: #0e0e0e; color: #888; cursor: pointer;
+    font-size: 12px; font-family: inherit; transition: all .2s;
+  }
+  .arb-panel .vote-row button:hover { border-color: #555; color: #ccc; }
+  .arb-panel .vote-row button.voted-del { border-color: #e04; color: #e04; background: #c81e3a11; }
+  .arb-panel .vote-row button.voted-keep { border-color: #c8a078; color: #c8a078; background: #c8a07811; }
+  .arb-panel .stat { font-size: 11px; color: #555; margin-top: 2px; }
+  .arb-panel .stat span { color: #888; margin: 0 4px; }
+
+  .empty-comment { color:#555; font-size:12px; padding:4px 0; }
+
+  /* ─── Lightbox actions (dev) ─── */
+  .lb-actions {
+    display: none;
+    gap: 10px; margin-top: 12px;
+    justify-content: center;
+  }
+  .dev-mode .lb-actions { display: flex; }
+  .lb-action-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 7px 16px; border: 1px solid #333;
+    background: #1a1a1a; color: #ccc;
+    border-radius: 6px; cursor: pointer;
+    font-size: 12px; font-family: inherit;
+    transition: all .2s;
+  }
+  .lb-action-btn:hover { background: #2a2a2a; color: #fff; border-color: #555; }
+  .lb-action-btn svg { width: 15px; height: 15px; fill: currentColor; flex-shrink: 0; }
+
+  /* ─── Modal ─── */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(0,0,0,.75);
+    align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    padding: 24px;
+  }
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: #161616;
+    border-radius: 14px;
+    padding: 32px;
+    width: 100%; max-width: 480px;
+    border: 1px solid #222;
+    animation: modalIn .25s ease;
+  }
+  @keyframes modalIn { from { opacity: 0; transform: scale(.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+  .modal h2 {
+    font-size: 18px; font-weight: 500; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .modal h2 svg { width: 20px; height: 20px; fill: currentColor; flex-shrink: 0; }
+
+  .modal .field { margin-bottom: 16px; }
+  .modal label { display: block; font-size: 13px; color: #999; margin-bottom: 5px; }
+  .modal input, .modal textarea {
+    width: 100%; padding: 10px 12px;
+    background: #0e0e0e; border: 1px solid #2a2a2a;
+    border-radius: 8px; color: #e0e0e0; font-size: 14px;
+    font-family: inherit; outline: none;
+    transition: border-color .2s;
+  }
+  .modal input:focus, .modal textarea:focus { border-color: #555; }
+  .modal textarea { resize: vertical; min-height: 60px; }
+
+  .modal .row { display: flex; gap: 12px; }
+  .modal .row .field { flex: 1; }
+
+  .modal .modal-actions {
+    display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px;
+  }
+  .modal .modal-actions button {
+    padding: 8px 20px; border-radius: 8px; border: none;
+    font-size: 13px; cursor: pointer; font-family: inherit;
+    transition: all .2s;
+  }
+  .modal .btn-cancel { background: #222; color: #888; }
+  .modal .btn-cancel:hover { background: #2a2a2a; color: #ccc; }
+  .modal .btn-primary { background: #c8a078; color: #0a0a0a; font-weight: 500; }
+  .modal .btn-primary:hover { background: #dbb08a; }
+
+  /* ─── Unlock overlay ─── */
+  .unlock-overlay {
+    position: fixed; inset: 0; z-index: 400;
+    background: rgba(0,0,0,.88);
+    display: none; align-items: center; justify-content: center;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .unlock-overlay.open { display: flex; }
+  .unlock-box {
+    background: #161616; border-radius: 14px;
+    padding: 32px; text-align: center;
+    border: 1px solid #222; max-width: 360px; width: 100%;
+    animation: modalIn .25s ease;
+  }
+  .unlock-box .lock-icon {
+    width: 48px; height: 48px; margin: 0 auto 16px;
+  }
+  .unlock-box h2 { font-size: 17px; font-weight: 500; margin-bottom: 4px; }
+  .unlock-box p { font-size: 13px; color: #888; margin-bottom: 20px; }
+  .unlock-box input {
+    width: 100%; padding: 12px;
+    background: #0e0e0e; border: 1px solid #2a2a2a;
+    border-radius: 8px; color: #e0e0e0; font-size: 16px;
+    text-align: center; outline: none; letter-spacing: 4px;
+    font-family: inherit;
+  }
+  .unlock-box input:focus { border-color: #555; }
+  .unlock-box .error { color: #d32f2f; font-size: 13px; margin-top: 10px; display: none; }
+  .unlock-box .actions { display: flex; gap: 10px; margin-top: 20px; }
+  .unlock-box .actions button {
+    flex: 1; padding: 10px; border-radius: 8px; border: none;
+    font-size: 13px; cursor: pointer; font-family: inherit;
+    transition: all .2s;
+  }
+
+  /* ─── Empty ─── */
+  .empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 80px 20px;
+    color: #555;
+  }
+  .empty p { font-size: 15px; line-height: 1.7; }
+  .empty .hint { margin-top: 8px; font-size: 13px; color: #3a3a3a; }
+
+  /* ─── Toast ─── */
+  .toast {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+    z-index: 500;
+    background: #1e1e1e; color: #ccc;
+    padding: 10px 22px; border-radius: 8px;
+    font-size: 13px;
+    border: 1px solid #2a2a2a;
+    opacity: 0; transition: opacity .3s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 640px) {
+    nav { padding: 12px 14px; flex-wrap: wrap; gap: 8px; }
+    nav .brand { font-size: 16px; }
+    nav .counter { font-size: 12px; margin-right: 12px; }
+    .mode-btn { padding: 5px 10px; font-size: 11px; }
+    .mode-btn svg { width: 13px; height: 13px; }
+    .gallery { padding: 84px 12px 40px; }
+    .grid { grid-template-columns: 1fr; gap: 16px; }
+    .lightbox { padding: 16px; }
+    .lightbox .nav-btn { font-size: 24px; padding: 12px 6px; }
+    .lightbox .nav-btn.prev { left: 4px; }
+    .lightbox .nav-btn.next { right: 4px; }
+    .modal { padding: 24px 18px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── Entry Lock ─── -->
+<div class="entry-lock" id="entryLock">
+  <div class="entry-box">
+    <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><circle cx="12" cy="16" r="1.5"/></svg>
+    <h1>✦ 画廊</h1>
+    <p>请输入访问密码</p>
+    <input type="password" id="entryInput" placeholder="******" maxlength="20" autocomplete="off">
+    <div class="error" id="entryError">密码错误</div>
+    <button id="entryBtn">进入</button>
+  </div>
+</div>
+
+<!-- ─── Nav ─── -->
+<nav>
+  <span class="brand">✦ 画廊</span>
+  <span class="counter" id="counter">0 幅作品</span>
+  <div class="mode-switch">
+    <button class="mode-btn active" id="modeVisitor" title="访客模式 — 仅浏览">
+      <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8a3 3 0 100 6 3 3 0 000-6z"/></svg>
+      访客
+    </button>
+    <button class="mode-btn" id="modeDev" title="开发者模式 — 需密码">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      开发者
+    </button>
+  </div>
+</nav>
+
+<!-- ─── Gallery ─── -->
+<main class="gallery">
+  <div class="grid" id="grid"></div>
+</main>
+
+<!-- ─── Lightbox ─── -->
+<div class="lightbox" id="lightbox" role="dialog" aria-label="画作预览">
+  <button class="close" id="lbClose">✕</button>
+  <button class="nav-btn prev" id="lbPrev">‹</button>
+  <button class="nav-btn next" id="lbNext">›</button>
+  <figure>
+    <img id="lbImg" src="" alt="">
+    <figcaption>
+      <div class="title" id="lbTitle"></div>
+      <div class="desc" id="lbDesc"></div>
+      <div class="lb-actions" id="lbActions">
+        <button class="lb-action-btn" id="lbDownload">
+          <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          下载
+        </button>
+      </div>
+      <!-- ─── Like & Comments ─── -->
+      <div class="lb-social">
+        <div class="like-row">
+          <button class="like-btn" id="likeBtn" title="点赞">
+            <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+            <span id="likeCount">0</span>
+          </button>
+        </div>
+        <div class="comment-area">
+          <div class="comment-list" id="commentList"></div>
+          <div class="comment-form">
+            <input type="text" id="commentInput" placeholder="写下你的评论..." maxlength="100">
+            <button id="commentBtn">发送</button>
+          </div>
+        </div>
+      </div>
+    </figcaption>
+  </figure>
+</div>
+
+<!-- ─── Unlock Modal ─── -->
+<div class="unlock-overlay" id="unlockOverlay">
+  <div class="unlock-box">
+    <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><circle cx="12" cy="16" r="1.5" fill="#888"/></svg>
+    <h2>开发者模式</h2>
+    <p>输入密码以解锁上传、下载、删除功能</p>
+    <input type="password" id="unlockInput" placeholder="请输入密码" maxlength="20" autocomplete="off">
+    <div class="error" id="unlockError">密码错误，请重试</div>
+    <div class="actions">
+      <button class="btn-cancel" id="unlockCancel">取消</button>
+      <button class="btn-primary" id="unlockConfirm">解锁</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Upload Modal ─── -->
+<div class="modal-overlay" id="uploadOverlay">
+  <div class="modal">
+    <h2>
+      <svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+      上传画作
+    </h2>
+    <div class="field">
+      <label>图片</label>
+      <input type="file" id="uploadFileInput" accept="image/*">
+    </div>
+    <div class="field">
+      <label>标题</label>
+      <input type="text" id="uploadTitle" placeholder="画作名称">
+    </div>
+    <div class="field">
+      <label>描述</label>
+      <textarea id="uploadDesc" placeholder="材质 · 尺寸 · 年份"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="uploadCancel">取消</button>
+      <button class="btn-primary" id="uploadConfirm">上传</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Edit Modal ─── -->
+<div class="modal-overlay" id="editOverlay">
+  <div class="modal">
+    <h2>
+      <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+      编辑画作
+    </h2>
+    <div class="field">
+      <label>标题</label>
+      <input type="text" id="editTitle" placeholder="画作名称">
+    </div>
+    <div class="field">
+      <label>描述</label>
+      <textarea id="editDesc" placeholder="材质 · 尺寸 · 年份"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="editCancel">取消</button>
+      <button class="btn-primary" id="editConfirm">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Toast ─── -->
+<div class="toast" id="toast"></div>
+
+<script>
+//  ─── State ───
+const PASSWORD = 'WF800630';
+const ENTRY_PASSWORD = '123456';
+const ENTRY_TOKEN_KEY = 'gallery_entry_token';
+const ENTRY_EXPIRY = 24 * 60 * 60 * 1000; // 24小时
+let isDev = false;
+let editIndex = -1;
+
+//  ─── 画作数据 & 持久化 ───
+const STORAGE_KEY = 'gallery_artworks';
+
+function loadArtworks() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch (_) {}
+  return [
+    {
+      src: "https://picsum.photos/seed/painting1/800/600",
+      title: "示例画作 一",
+      desc: "2024 · 布面油画 · 80×60cm"
+    },
+    {
+      src: "https://picsum.photos/seed/painting2/800/600",
+      title: "示例画作 二",
+      desc: "2024 · 水彩 · 56×38cm"
+    },
+    {
+      src: "https://picsum.photos/seed/painting3/800/600",
+      title: "示例画作 三",
+      desc: "2023 · 丙烯 · 100×80cm"
+    },
+    {
+      src: "https://picsum.photos/seed/painting4/800/600",
+      title: "示例画作 四",
+      desc: "2023 · 素描 · 42×30cm"
+    },
+    {
+      src: "https://picsum.photos/seed/painting5/800/600",
+      title: "示例画作 五",
+      desc: "2024 · 数码绘画"
+    },
+    {
+      src: "https://picsum.photos/seed/painting6/800/600",
+      title: "示例画作 六",
+      desc: "2024 · 综合材料 · 90×70cm"
+    }
+  ];
+}
+
+function saveArtworks() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(artworks));
+  } catch (_) {}
+}
+
+const artworks = loadArtworks();
+
+//  ─── DOM refs ───
+const $ = id => document.getElementById(id);
+const grid = $('grid');
+const counter = $('counter');
+const lb = $('lightbox');
+const lbImg = $('lbImg');
+const lbTitle = $('lbTitle');
+const lbDesc = $('lbDesc');
+const toast = $('toast');
+let currentIdx = -1;
+
+//  ─── Toast ───
+let toastTimer;
+function showToast(msg) {
+  clearTimeout(toastTimer);
+  toast.textContent = msg;
+  toast.classList.add('show');
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+//  ─── Render ───
+function render() {
+  if (!artworks.length) {
+    grid.innerHTML = `<div class="empty">
+      <p>还没有画作</p>
+      <p class="hint">进入开发者模式上传你的作品</p>
+    </div>`;
+    counter.textContent = '0 幅作品';
+    return;
+  }
+
+  grid.innerHTML = artworks.map((a, i) => `
+    <div class="card" data-index="${i}">
+      <img src="${a.src}" alt="${a.title}" loading="lazy" draggable="false">
+      <button class="delete-btn" data-index="${i}" title="删除画作">
+        <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+      </button>
+      <div class="info">
+        <div class="title">${a.title}</div>
+        <div class="meta">${a.desc}</div>
+      </div>
+    </div>
+  `).join('');
+  counter.textContent = `${artworks.length} 幅作品`;
+
+  // Delete handlers
+  document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.index);
+      if (confirm(`确认删除「${artworks[idx].title}」？`)) {
+        artworks.splice(idx, 1);
+        saveArtworks();
+        render();
+        if (lb.classList.contains('open') && currentIdx >= artworks.length) {
+          if (artworks.length === 0) closeLightbox();
+          else { currentIdx = Math.max(0, artworks.length - 1); openLightbox(currentIdx); }
+        }
+        showToast('已删除');
+      }
+    });
+  });
+}
+render();
+
+//  ─── Entry Lock (24小时免登录) ───
+function isEntryValid() {
+  try {
+    const raw = localStorage.getItem(ENTRY_TOKEN_KEY);
+    if (!raw) return false;
+    const { t } = JSON.parse(raw);
+    return Date.now() - t < ENTRY_EXPIRY;
+  } catch (_) { return false; }
+}
+
+function markEntry() {
+  try { localStorage.setItem(ENTRY_TOKEN_KEY, JSON.stringify({ t: Date.now() })); } catch (_) {}
+}
+
+function showEntryLock() {
+  $('entryLock').classList.remove('hidden');
+  $('entryInput').value = '';
+  $('entryError').style.display = 'none';
+  $('entryInput').focus();
+}
+
+if (isEntryValid()) {
+  $('entryLock').classList.add('hidden');
+} else {
+  showEntryLock();
+}
+
+function checkEntry() {
+  const val = $('entryInput').value;
+  if (val === ENTRY_PASSWORD) {
+    markEntry();
+    $('entryLock').classList.add('hidden');
+    $('entryInput').value = '';
+    $('entryError').style.display = 'none';
+  } else {
+    $('entryError').style.display = 'block';
+    $('entryInput').select();
+  }
+}
+$('entryBtn').addEventListener('click', checkEntry);
+$('entryInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkEntry(); });
+
+//  ─── Lightbox ───
+function openLightbox(idx) {
+  currentIdx = idx;
+  const a = artworks[idx];
+  lbImg.src = a.src;
+  lbImg.alt = a.title;
+  lbTitle.textContent = a.title;
+  lbDesc.textContent = a.desc;
+  lb.classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  // Show edit + download only in dev mode
+  $('lbActions').style.display = isDev ? 'flex' : 'none';
+
+  // Load like & comments
+  renderSocial(idx);
+}
+
+function closeLightbox() {
+  lb.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function prev() {
+  if (!artworks.length) return;
+  currentIdx = (currentIdx - 1 + artworks.length) % artworks.length;
+  openLightbox(currentIdx);
+}
+function next() {
+  if (!artworks.length) return;
+  currentIdx = (currentIdx + 1) % artworks.length;
+  openLightbox(currentIdx);
+}
+
+grid.addEventListener('click', e => {
+  const card = e.target.closest('.card');
+  if (card) openLightbox(parseInt(card.dataset.index));
+});
+
+$('lbClose').onclick = closeLightbox;
+$('lbPrev').onclick = prev;
+$('lbNext').onclick = next;
+
+document.addEventListener('keydown', e => {
+  if ($('unlockOverlay').classList.contains('open')) {
+    if (e.key === 'Enter') $('unlockConfirm').click();
+    if (e.key === 'Escape') $('unlockCancel').click();
+    return;
+  }
+  if ($('uploadOverlay').classList.contains('open') || $('editOverlay').classList.contains('open')) {
+    if (e.key === 'Escape') { $('uploadOverlay').classList.remove('open'); $('editOverlay').classList.remove('open'); }
+    return;
+  }
+  if (!lb.classList.contains('open')) return;
+  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowLeft') prev();
+  if (e.key === 'ArrowRight') next();
+});
+
+lb.addEventListener('click', e => { if (e.target === lb) closeLightbox(); });
+
+//  ─── Download ───
+$('lbDownload').addEventListener('click', () => {
+  if (!isDev) return;
+  const a = artworks[currentIdx];
+  const link = document.createElement('a');
+  link.href = a.src;
+  link.download = a.title || 'painting';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast('正在下载');
+});
+
+//  ─── Like & Comments + 仲裁系统 ───
+const SOCIAL_KEY = 'gallery_social';
+const COMMENT_EXPIRY = 30 * 24 * 60 * 60 * 1000; // 30天
+const ARB_EXPIRY = 48 * 60 * 60 * 1000; // 48小时
+
+function getUserId() {
+  let id = localStorage.getItem('gallery_user_id');
+  if (!id) {
+    id = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    localStorage.setItem('gallery_user_id', id);
+  }
+  return id;
+}
+
+function loadSocial() {
+  try {
+    const raw = localStorage.getItem(SOCIAL_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      // 清理过期评论 + 处理过期仲裁
+      let changed = false;
+      Object.keys(data).forEach(pid => {
+        const d = data[pid];
+        if (!d.comments) return;
+        // 过滤过期评论
+        const before = d.comments.length;
+        d.comments = d.comments.filter(c => Date.now() - c.t < COMMENT_EXPIRY);
+        if (d.comments.length !== before) changed = true;
+        // 处理过期仲裁
+        d.comments.forEach(c => {
+          if (c.arb && Date.now() - c.arb.start > ARB_EXPIRY) {
+            // 超时无人过半数 -> 结束仲裁，保留评论，保持 arb 功能但标记为已结束
+            const votesDel = c.arb.votes.filter(v => v.vote === 'del').length;
+            const votesKeep = c.arb.votes.filter(v => v.vote === 'keep').length;
+            const total = new Set(c.arb.votes.map(v => v.voterId)).size;
+            if (total === 0) {
+              delete c.arb;
+            } else if (votesDel > total / 2) {
+              // 删评
+              d.comments = d.comments.filter(x => x !== c);
+              changed = true;
+            } else if (votesKeep > total / 2) {
+              // 保评 -> 精品置顶
+              c.pinned = true;
+              delete c.arb;
+            } else {
+              // 无人过半数 -> 结束仲裁，保持评论，保留仲裁功能但清空投票
+              c.arb = { start: c.arb.start, ended: true, votes: [] };
+            }
+            changed = true;
+          }
+        });
+      });
+      if (changed) localStorage.setItem(SOCIAL_KEY, JSON.stringify(data));
+      return data;
+    }
+  } catch (_) {}
+  return {};
+}
+
+function saveSocial(data) {
+  try { localStorage.setItem(SOCIAL_KEY, JSON.stringify(data)); } catch (_) {}
+}
+
+function getSocial(paintingId) {
+  const all = loadSocial();
+  if (!all[paintingId]) all[paintingId] = { likes: 0, likedBy: [], comments: [] };
+  return all;
+}
+
+function renderSocial(idx) {
+  if (idx < 0) return;
+  const pid = idx.toString();
+  const all = getSocial(pid);
+  const data = all[pid];
+  const userId = getUserId();
+
+  // Like
+  const hasLiked = data.likedBy.includes(userId);
+  $('likeCount').textContent = data.likes;
+  $('likeBtn').classList.toggle('liked', hasLiked);
+
+  // Comments
+  const valid = data.comments.filter(c => Date.now() - c.t < COMMENT_EXPIRY);
+  if (valid.length !== data.comments.length) {
+    data.comments = valid;
+    saveSocial(all);
+  }
+
+  const cl = $('commentList');
+  if (valid.length === 0) {
+    cl.innerHTML = '<div class="empty-comment">暂无评论</div>';
+    return;
+  }
+
+  // 置顶评论优先
+  const sorted = [...valid].sort((a, b) => (a.pinned ? -1 : 1) - (b.pinned ? -1 : 1));
+
+  cl.innerHTML = sorted.map((c, i) => {
+    const isOwner = c.uid === userId;
+    const isDev_ = isDev;
+    const hasArb = !!c.arb;
+    const isArbEnded = c.arb && c.arb.ended;
+
+    let html = `<div class="comment-item${c.pinned ? ' pinned' : ''}">`;
+    html += `<div class="text">${escapeHtml(c.text)}</div>`;
+    html += `<div class="meta">${formatTime(c.t)}`;
+    if (c.pinned) html += `<span class="tag">★ 精品</span>`;
+    if (hasArb && !isArbEnded) html += `<span class="del-tag">⚖ 仲裁中</span>`;
+    html += `</div>`;
+
+    // 操作按钮
+    html += `<div class="actions">`;
+    // 本人可删
+    if (isOwner) {
+      html += `<button class="del" data-arb-del="${i}">删除</button>`;
+    }
+    // 开发者可删
+    if (isDev_) {
+      html += `<button class="del" data-arb-del="${i}">管理员删除</button>`;
+    }
+    // 仲裁按钮：其他人可发起仲裁（只有自己不是评论者、不是开发者、非本人、没有进行中的仲裁时显示）
+    if (!isOwner && !isDev_ && !hasArb) {
+      html += `<button class="arb-on" data-arb-start="${i}">⚖ 仲裁</button>`;
+    }
+    html += `</div>`;
+
+    // 仲裁面板
+    if (hasArb && !isArbEnded) {
+      const votes = c.arb.votes || [];
+      const uniqueVoters = new Set(votes.map(v => v.voterId));
+      const totalVoters = uniqueVoters.size;
+      const delCount = votes.filter(v => v.vote === 'del').length;
+      const keepCount = votes.filter(v => v.vote === 'keep').length;
+      const myVote = votes.find(v => v.voterId === userId);
+
+      // 本作品的评论者列表（去重设备）
+      const allCommenters = new Set(valid.map(x => x.uid));
+      // 可以投票的人：评论过这幅画的人（去重），且不是被仲裁评论的作者
+      const eligibleVoters = [...allCommenters].filter(uid => uid !== c.uid);
+      const isEligible = eligibleVoters.includes(userId);
+
+      html += `<div class="arb-panel">`;
+      html += `<div class="title">⚖ 仲裁投票 (${formatTimeLeft(ARB_EXPIRY - (Date.now() - c.arb.start))})</div>`;
+      if (isEligible) {
+        html += `<div class="vote-row">`;
+        html += `<button class="${myVote?.vote === 'del' ? 'voted-del' : ''}" data-arb-vote="${i}|del">🗑 支持删除</button>`;
+        html += `<button class="${myVote?.vote === 'keep' ? 'voted-keep' : ''}" data-arb-vote="${i}|keep">⭐ 支持保留</button>`;
+        html += `</div>`;
+      }
+      html += `<div class="stat">已投票: <span>${totalVoters}</span> 人 | 删评 <span>${delCount}</span> 票 · 保评 <span>${keepCount}</span> 票</div>`;
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }).join('');
+}
+
+function formatTimeLeft(ms) {
+  if (ms <= 0) return '已结束';
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return `剩余 ${h}小时${m}分`;
+}
+
+function escapeHtml(s) {
+  const el = document.createElement('div');
+  el.textContent = s;
+  return el.innerHTML;
+}
+
+function formatTime(ts) {
+  const diff = Date.now() - ts;
+  const days = Math.floor(diff / 86400000);
+  if (days > 0) return days + '天前';
+  const hours = Math.floor(diff / 3600000);
+  if (hours > 0) return hours + '小时前';
+  const mins = Math.floor(diff / 60000);
+  return Math.max(1, mins) + '分钟前';
+}
+
+// Like
+$('likeBtn').addEventListener('click', () => {
+  if (currentIdx < 0) return;
+  const pid = currentIdx.toString();
+  const all = getSocial(pid);
+  const userId = getUserId();
+  const data = all[pid];
+  if (data.likedBy.includes(userId)) {
+    data.likes--;
+    data.likedBy = data.likedBy.filter(id => id !== userId);
+  } else {
+    data.likes++;
+    data.likedBy.push(userId);
+  }
+  saveSocial(all);
+  renderSocial(currentIdx);
+});
+
+// Comment submit
+$('commentBtn').addEventListener('click', () => {
+  if (currentIdx < 0) return;
+  const input = $('commentInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const pid = currentIdx.toString();
+  const all = getSocial(pid);
+  all[pid].comments.push({ text, t: Date.now(), uid: getUserId() });
+  saveSocial(all);
+  input.value = '';
+  renderSocial(currentIdx);
+});
+$('commentInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('commentBtn').click();
+});
+
+// 评论操作委托事件（删除、仲裁、投票）
+$('commentList').addEventListener('click', e => {
+  const target = e.target;
+  const pid = currentIdx.toString();
+  const all = getSocial(pid);
+  const data = all[pid];
+
+  // 删除
+  if (target.dataset.arbDel !== undefined) {
+    const idx = parseInt(target.dataset.arbDel);
+    const valid = data.comments.filter(c => Date.now() - c.t < COMMENT_EXPIRY);
+    // 找到实际索引（跳过已过期）
+    const realIdx = data.comments.indexOf(valid[idx]);
+    if (realIdx === -1) return;
+    data.comments.splice(realIdx, 1);
+    saveSocial(all);
+    renderSocial(currentIdx);
+    showToast('评论已删除');
+    return;
+  }
+
+  // 发起仲裁
+  if (target.dataset.arbStart !== undefined) {
+    const idx = parseInt(target.dataset.arbStart);
+    const valid = data.comments.filter(c => Date.now() - c.t < COMMENT_EXPIRY);
+    const realIdx = data.comments.indexOf(valid[idx]);
+    if (realIdx === -1) return;
+    if (data.comments[realIdx].arb) return;
+    data.comments[realIdx].arb = { start: Date.now(), votes: [], ended: false };
+    saveSocial(all);
+    renderSocial(currentIdx);
+    showToast('已发起仲裁，等待其他评论者投票');
+    return;
+  }
+
+  // 仲裁投票
+  if (target.dataset.arbVote !== undefined) {
+    const [idxStr, vote] = target.dataset.arbVote.split('|');
+    const idx = parseInt(idxStr);
+    const valid = data.comments.filter(c => Date.now() - c.t < COMMENT_EXPIRY);
+    const realIdx = data.comments.indexOf(valid[idx]);
+    if (realIdx === -1) return;
+    const c = data.comments[realIdx];
+    if (!c.arb || c.arb.ended) return;
+    if (Date.now() - c.arb.start > ARB_EXPIRY) return;
+
+    const userId = getUserId();
+    const existing = c.arb.votes.findIndex(v => v.voterId === userId);
+    if (existing !== -1) {
+      c.arb.votes[existing].vote = vote;
+    } else {
+      c.arb.votes.push({ voterId: userId, vote });
+    }
+
+    // 检查是否过半数
+    const uniqueVoters = new Set(c.arb.votes.map(v => v.voterId));
+    const total = uniqueVoters.size;
+    const delCount = c.arb.votes.filter(v => v.vote === 'del').length;
+    const keepCount = c.arb.votes.filter(v => v.vote === 'keep').length;
+
+    if (delCount > total / 2) {
+      // 删评
+      data.comments.splice(realIdx, 1);
+      saveSocial(all);
+      renderSocial(currentIdx);
+      showToast('仲裁结果：评论已被删除');
+      return;
+    }
+    if (keepCount > total / 2) {
+      // 保评 -> 精品置顶
+      c.pinned = true;
+      delete c.arb;
+      saveSocial(all);
+      renderSocial(currentIdx);
+      showToast('仲裁结果：评论已被设为精品置顶');
+      return;
+    }
+
+    saveSocial(all);
+    renderSocial(currentIdx);
+    return;
+  }
+});
+
+//  ─── Mode Switch ───
+$('modeVisitor').addEventListener('click', () => {
+  if (!isDev) return;
+  isDev = false;
+  document.body.classList.remove('dev-mode');
+  $('modeVisitor').classList.add('active');
+  $('modeDev').classList.remove('active');
+  if (lb.classList.contains('open')) $('lbActions').style.display = 'none';
+  showToast('已切换到访客模式');
+});
+
+$('modeDev').addEventListener('click', () => {
+  if (isDev) return;
+  $('unlockOverlay').classList.add('open');
+  $('unlockInput').value = '';
+  $('unlockError').style.display = 'none';
+  setTimeout(() => $('unlockInput').focus(), 100);
+});
+
+function unlockDev() {
+  const val = $('unlockInput').value;
+  if (val === PASSWORD) {
+    isDev = true;
+    document.body.classList.add('dev-mode');
+    $('modeDev').classList.add('active');
+    $('modeVisitor').classList.remove('active');
+    $('unlockOverlay').classList.remove('open');
+    if (lb.classList.contains('open')) $('lbActions').style.display = 'flex';
+    showToast('已解锁开发者模式');
+  } else {
+    $('unlockError').style.display = 'block';
+    $('unlockInput').select();
+  }
+}
+
+$('unlockConfirm').addEventListener('click', unlockDev);
+$('unlockInput').addEventListener('keydown', e => { if (e.key === 'Enter') unlockDev(); });
+$('unlockCancel').addEventListener('click', () => $('unlockOverlay').classList.remove('open'));
+
+//  ─── Upload ───
+$('uploadCancel').addEventListener('click', () => {
+  $('uploadOverlay').classList.remove('open');
+  $('uploadFileInput').value = '';
+  $('uploadTitle').value = '';
+  $('uploadDesc').value = '';
+});
+
+$('uploadConfirm').addEventListener('click', () => {
+  const file = $('uploadFileInput').files[0];
+  const title = $('uploadTitle').value.trim() || '未命名';
+  const desc = $('uploadDesc').value.trim();
+  if (!file) { showToast('请选择图片'); return; }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    artworks.push({ src: e.target.result, title, desc });
+        saveArtworks();
+    render();
+    $('uploadOverlay').classList.remove('open');
+    $('uploadFileInput').value = '';
+    $('uploadTitle').value = '';
+    $('uploadDesc').value = '';
+    showToast('上传成功');
+  };
+  reader.readAsDataURL(file);
+});
+
+//  ─── Edit ───
+$('editCancel').addEventListener('click', () => $('editOverlay').classList.remove('open'));
+$('editConfirm').addEventListener('click', () => {
+  const title = $('editTitle').value.trim() || '未命名';
+  const desc = $('editDesc').value.trim();
+  artworks[editIndex].title = title;
+  artworks[editIndex].desc = desc;
+  saveArtworks();
+  render();
+  openLightbox(editIndex);
+  $('editOverlay').classList.remove('open');
+  showToast('已更新');
+});
+
+//  ─── Floating dev toolbar ───
+// 在开发者模式下，右下角添加上传浮动按钮
+const fab = document.createElement('div');
+fab.innerHTML = `
+<style>
+.fab {
+  position: fixed; bottom: 28px; right: 28px; z-index: 90;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: #c8a078; border: none; cursor: pointer;
+  display: none; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(200,160,120,.3);
+  transition: transform .2s, box-shadow .2s;
+}
+.fab:hover { transform: scale(1.08); box-shadow: 0 6px 24px rgba(200,160,120,.4); }
+.fab svg { width: 24px; height: 24px; fill: #0a0a0a; }
+.dev-mode .fab { display: flex; }
+@media (max-width:640px){ .fab { bottom: 18px; right: 18px; width: 48px; height: 48px; } }
+</style>
+<button class="fab" id="fabUpload" title="上传画作">
+  <svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+</button>
+`;
+document.body.appendChild(fab);
+$('fabUpload').addEventListener('click', () => {
+  if (!isDev) return;
+  $('uploadOverlay').classList.add('open');
+});
+</script>
+</body>
+</html>
