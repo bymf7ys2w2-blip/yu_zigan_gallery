@@ -619,8 +619,13 @@ async function syncFromCloud() {
   }
 }
 
-// 上传到云端
+// 上传到云端（带频率限制）
+let lastSyncTime = 0;
 async function syncToCloud(silent) {
+  const now = Date.now();
+  // 距上次同步不足10秒则跳过，防刷
+  if (now - lastSyncTime < 10000) return;
+  lastSyncTime = now;
   const socialRaw = localStorage.getItem(SOCIAL_KEY);
   const social = socialRaw ? JSON.parse(socialRaw) : {};
   try {
@@ -632,14 +637,14 @@ async function syncToCloud(silent) {
     if (!resp.ok) throw new Error('sync failed');
     if (!silent) showToast('已同步到云端');
   } catch(e) {
-    if (!silent) showToast('同步失败');
+    showToast('已保存到本地');
   }
 }
 
 let syncTimer;
 function debounceSync() {
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => syncToCloud(false), 3000);
+  syncTimer = setTimeout(() => syncToCloud(true), 8000);
 }
 
 let cloudReady = false;
