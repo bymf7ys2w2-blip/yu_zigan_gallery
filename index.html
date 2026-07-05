@@ -57,7 +57,16 @@
     background: linear-gradient(180deg, rgba(10,10,10,.95) 60%, transparent);
   }
   nav .brand { font-size: 18px; font-weight: 500; letter-spacing: 2px; margin-right: auto; }
-  nav .counter { font-size: 13px; color: #888; font-variant-numeric: tabular-nums; margin-right: 24px; }
+  nav .brand .share-badge { font-size: 11px; color: #c8a078; font-weight: 400; letter-spacing: 0; margin-left: 6px; }
+  nav .counter { font-size: 13px; color: #888; font-variant-numeric: tabular-nums; margin-right: 12px; }
+  nav .share-btn {
+    background: none; border: 1px solid #333; color: #888;
+    padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    font-size: 12px; font-family: inherit; margin-right: 12px;
+    display: inline-flex; align-items: center; gap: 4px; transition: all .2s;
+  }
+  nav .share-btn:hover { border-color: #c8a078; color: #c8a078; }
+  nav .share-btn svg { width: 14px; height: 14px; fill: currentColor; }
 
   /* ─── Mode Switch ─── */
   .mode-switch {
@@ -439,8 +448,16 @@
 
 <!-- ─── Nav ─── -->
 <nav>
-  <span class="brand">✦ 画廊</span>
+  <span class="brand">✦ 画廊<span class="share-badge" id="shareBadge"></span></span>
   <span class="counter" id="counter">0 幅作品</span>
+  <button class="share-btn" id="shareBtn" title="分享画廊">
+    <svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
+    分享
+  </button>
+  <button class="share-btn" id="syncBtn" title="同步到云端" style="display:none;">
+    <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    同步
+  </button>
   <div class="mode-switch">
     <button class="mode-btn active" id="modeVisitor" title="访客模式 — 仅浏览">
       <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8a3 3 0 100 6 3 3 0 000-6z"/></svg>
@@ -566,10 +583,94 @@ const PASSWORD = 'WF800630';
 const ENTRY_PASSWORD = '123456';
 const ENTRY_TOKEN_KEY = 'gallery_entry_token';
 const ENTRY_EXPIRY = 24 * 60 * 60 * 1000; // 24小时
+const SOCIAL_KEY = 'gallery_social';
 let isDev = false;
 let editIndex = -1;
 
-//  ─── 画作数据 & 持久化 ───
+//  ─── 云端数据同步 (JSONBin) ───
+const JSONBIN_BIN_ID_KEY = 'gallery_bin_id';
+const JSONBIN_API = 'https://api.jsonbin.io/v3/b';
+
+function getBinId() {
+  return localStorage.getItem(JSONBIN_BIN_ID_KEY);
+}
+
+function setBinId(id) {
+  localStorage.setItem(JSONBIN_BIN_ID_KEY, id);
+}
+
+// 首次创建或获取云端数据
+async function syncFromCloud() {
+  let binId = getBinId();
+  if (!binId) {
+    // 首次使用：创建新 bin
+    const payload = { artworks, social: {} };
+    try {
+      const resp = await fetch(JSONBIN_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Bin-Private': 'false' },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) throw new Error('create failed');
+      const data = await resp.json();
+      binId = data.metadata.id;
+      setBinId(binId);
+      return; // 刚创建，本地数据就是最新的
+    } catch(e) {
+      console.warn('JSONBin 创建失败，使用本地数据');
+      return;
+    }
+  }
+
+  // 已有 bin，拉取云端数据
+  try {
+    const resp = await fetch(`${JSONBIN_API}/${binId}/latest`, {
+      headers: { 'X-Bin-Meta': 'false' }
+    });
+    if (!resp.ok) throw new Error('fetch failed');
+    const cloud = await resp.json();
+
+    // 合并云端数据到本地
+    if (cloud.artworks && Array.isArray(cloud.artworks)) {
+      artworks.length = 0;
+      artworks.push(...cloud.artworks);
+      saveArtworks();
+    }
+    if (cloud.social) {
+      localStorage.setItem(SOCIAL_KEY, JSON.stringify(cloud.social));
+    }
+    $('shareBadge').textContent = '· 在线';
+  } catch(e) {
+    console.warn('JSONBin 拉取失败，使用本地数据');
+  }
+}
+
+// 上传本地数据到云端
+async function syncToCloud(silent) {
+  const binId = getBinId();
+  if (!binId) {
+    if (!silent) showToast('请先刷新页面初始化云端同步');
+    return;
+  }
+  const socialRaw = localStorage.getItem(SOCIAL_KEY);
+  const social = socialRaw ? JSON.parse(socialRaw) : {};
+  const payload = { artworks, social };
+  try {
+    const resp = await fetch(`${JSONBIN_API}/${binId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Bin-Private': 'false' },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) throw new Error('sync failed');
+    if (!silent) showToast('已同步到云端');
+  } catch(e) {
+    if (!silent) showToast('同步失败，请重试');
+  }
+}
+
+// 初始化时从云端拉取
+let cloudReady = false;
+syncFromCloud().then(() => { cloudReady = true; render(); });
 const STORAGE_KEY = 'gallery_artworks';
 
 function loadArtworks() {
@@ -615,6 +716,7 @@ function saveArtworks() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(artworks));
   } catch (_) {}
+  if (cloudReady && getBinId()) debounceSync();
 }
 
 const artworks = loadArtworks();
@@ -726,6 +828,55 @@ function checkEntry() {
 $('entryBtn').addEventListener('click', checkEntry);
 $('entryInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkEntry(); });
 
+//  ─── URL 数据导入 ───
+(function loadFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const dataStr = params.get('data');
+  if (!dataStr) return;
+  try {
+    const decoded = JSON.parse(atob(decodeURIComponent(dataStr)));
+    if (decoded.artworks && Array.isArray(decoded.artworks)) {
+      artworks.length = 0;
+      artworks.push(...decoded.artworks);
+      saveArtworks();
+    }
+    if (decoded.social) {
+      localStorage.setItem(SOCIAL_KEY, JSON.stringify(decoded.social));
+    }
+    // 显示数据来源标识
+    const badge = $('shareBadge');
+    if (badge) badge.textContent = '· 共享';
+    // 清除 URL 中的 data 参数，防止刷新重复导入
+    const url = new URL(window.location);
+    url.searchParams.delete('data');
+    window.history.replaceState({}, '', url);
+  } catch(e) {
+    console.warn('数据加载失败');
+  }
+})();
+
+//  ─── 分享功能 ───
+function exportGalleryData() {
+  const socialRaw = localStorage.getItem(SOCIAL_KEY);
+  const social = socialRaw ? JSON.parse(socialRaw) : {};
+  const payload = { artworks, social };
+  const encoded = encodeURIComponent(btoa(JSON.stringify(payload)));
+  const url = `${window.location.origin}${window.location.pathname}?data=${encoded}`;
+  return url;
+}
+
+$('shareBtn').addEventListener('click', async () => {
+  const url = exportGalleryData();
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('分享链接已复制到剪贴板');
+  } catch (_) {
+    prompt('复制此链接分享给他人：', url);
+  }
+});
+
+$('syncBtn').addEventListener('click', syncToCloud);
+
 //  ─── Lightbox ───
 function openLightbox(idx) {
   currentIdx = idx;
@@ -801,7 +952,6 @@ $('lbDownload').addEventListener('click', () => {
 });
 
 //  ─── Like & Comments + 仲裁系统 ───
-const SOCIAL_KEY = 'gallery_social';
 const COMMENT_EXPIRY = 30 * 24 * 60 * 60 * 1000; // 30天
 const ARB_EXPIRY = 48 * 60 * 60 * 1000; // 48小时
 
@@ -862,6 +1012,7 @@ function loadSocial() {
 
 function saveSocial(data) {
   try { localStorage.setItem(SOCIAL_KEY, JSON.stringify(data)); } catch (_) {}
+  if (cloudReady && getBinId()) debounceSync();
 }
 
 function getSocial(paintingId) {
@@ -1129,6 +1280,8 @@ function unlockDev() {
     $('modeVisitor').classList.remove('active');
     $('unlockOverlay').classList.remove('open');
     if (lb.classList.contains('open')) $('lbActions').style.display = 'flex';
+    // 显示同步按钮
+    $('syncBtn').style.display = 'inline-flex';
     showToast('已解锁开发者模式');
   } else {
     $('unlockError').style.display = 'block';
