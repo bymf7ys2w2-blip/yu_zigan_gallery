@@ -583,50 +583,18 @@ const SOCIAL_KEY = 'gallery_social';
 let isDev = false;
 let editIndex = -1;
 
-//  ─── 云端数据同步 (JSONBin) ───
-const JSONBIN_BIN_ID_KEY = 'gallery_bin_id';
+//  ─── 云端数据同步 (JSONBin) - 固定 bin ID，所有设备共用 ───
+const JSONBIN_BIN_ID = '67c4f1f0ad19ca34f8b9c0c1';
 const JSONBIN_API = 'https://api.jsonbin.io/v3/b';
 
-function getBinId() {
-  return localStorage.getItem(JSONBIN_BIN_ID_KEY);
-}
-
-function setBinId(id) {
-  localStorage.setItem(JSONBIN_BIN_ID_KEY, id);
-}
-
-// 首次创建或获取云端数据
+// 从云端拉取数据
 async function syncFromCloud() {
-  let binId = getBinId();
-  if (!binId) {
-    // 首次使用：创建新 bin
-    const payload = { artworks, social: {} };
-    try {
-      const resp = await fetch(JSONBIN_API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Bin-Private': 'false' },
-        body: JSON.stringify(payload)
-      });
-      if (!resp.ok) throw new Error('create failed');
-      const data = await resp.json();
-      binId = data.metadata.id;
-      setBinId(binId);
-      return; // 刚创建，本地数据就是最新的
-    } catch(e) {
-      console.warn('JSONBin 创建失败，使用本地数据');
-      return;
-    }
-  }
-
-  // 已有 bin，拉取云端数据
   try {
-    const resp = await fetch(`${JSONBIN_API}/${binId}/latest`, {
+    const resp = await fetch(`${JSONBIN_API}/${JSONBIN_BIN_ID}/latest`, {
       headers: { 'X-Bin-Meta': 'false' }
     });
     if (!resp.ok) throw new Error('fetch failed');
     const cloud = await resp.json();
-
-    // 合并云端数据到本地
     if (cloud.artworks && Array.isArray(cloud.artworks)) {
       artworks.length = 0;
       artworks.push(...cloud.artworks);
@@ -636,39 +604,47 @@ async function syncFromCloud() {
       localStorage.setItem(SOCIAL_KEY, JSON.stringify(cloud.social));
     }
     $('shareBadge').textContent = '· 在线';
-    // 3秒后自动同步本地数据到云端（首次拉取后推送本地）
     setTimeout(() => syncToCloud(true), 1000);
   } catch(e) {
-    console.warn('JSONBin 拉取失败，使用本地数据');
+    // 首次使用创建 bin
+    try {
+      const payload = { artworks, social: {} };
+      const resp = await fetch(JSONBIN_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Bin-Private': 'false' },
+        body: JSON.stringify(payload)
+      });
+      if (resp.ok) $('shareBadge').textContent = '· 在线';
+    } catch(_) {}
   }
 }
 
-// 上传本地数据到云端
+// 上传到云端
 async function syncToCloud(silent) {
-  const binId = getBinId();
-  if (!binId) {
-    if (!silent) showToast('请先刷新页面初始化云端同步');
-    return;
-  }
   const socialRaw = localStorage.getItem(SOCIAL_KEY);
   const social = socialRaw ? JSON.parse(socialRaw) : {};
-  const payload = { artworks, social };
   try {
-    const resp = await fetch(`${JSONBIN_API}/${binId}`, {
+    const resp = await fetch(`${JSONBIN_API}/${JSONBIN_BIN_ID}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-Bin-Private': 'false' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ artworks, social })
     });
     if (!resp.ok) throw new Error('sync failed');
     if (!silent) showToast('已同步到云端');
   } catch(e) {
-    if (!silent) showToast('同步失败，请重试');
+    if (!silent) showToast('同步失败');
   }
 }
 
-// 初始化时从云端拉取
+let syncTimer;
+function debounceSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => syncToCloud(false), 3000);
+}
+
 let cloudReady = false;
 syncFromCloud().then(() => { cloudReady = true; render(); });
+
 const STORAGE_KEY = 'gallery_artworks';
 
 function loadArtworks() {
@@ -677,44 +653,18 @@ function loadArtworks() {
     if (saved) return JSON.parse(saved);
   } catch (_) {}
   return [
-    {
-      src: "https://picsum.photos/seed/painting1/800/600",
-      title: "示例画作 一",
-      desc: "2024 · 布面油画 · 80×60cm"
-    },
-    {
-      src: "https://picsum.photos/seed/painting2/800/600",
-      title: "示例画作 二",
-      desc: "2024 · 水彩 · 56×38cm"
-    },
-    {
-      src: "https://picsum.photos/seed/painting3/800/600",
-      title: "示例画作 三",
-      desc: "2023 · 丙烯 · 100×80cm"
-    },
-    {
-      src: "https://picsum.photos/seed/painting4/800/600",
-      title: "示例画作 四",
-      desc: "2023 · 素描 · 42×30cm"
-    },
-    {
-      src: "https://picsum.photos/seed/painting5/800/600",
-      title: "示例画作 五",
-      desc: "2024 · 数码绘画"
-    },
-    {
-      src: "https://picsum.photos/seed/painting6/800/600",
-      title: "示例画作 六",
-      desc: "2024 · 综合材料 · 90×70cm"
-    }
+    { src: "https://picsum.photos/seed/painting1/800/600", title: "示例画作 一", desc: "2024 · 布面油画 · 80×60cm" },
+    { src: "https://picsum.photos/seed/painting2/800/600", title: "示例画作 二", desc: "2024 · 水彩 · 56×38cm" },
+    { src: "https://picsum.photos/seed/painting3/800/600", title: "示例画作 三", desc: "2023 · 丙烯 · 100×80cm" },
+    { src: "https://picsum.photos/seed/painting4/800/600", title: "示例画作 四", desc: "2023 · 素描 · 42×30cm" },
+    { src: "https://picsum.photos/seed/painting5/800/600", title: "示例画作 五", desc: "2024 · 数码绘画" },
+    { src: "https://picsum.photos/seed/painting6/800/600", title: "示例画作 六", desc: "2024 · 综合材料 · 90×70cm" }
   ];
 }
 
 function saveArtworks() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(artworks));
-  } catch (_) {}
-  if (cloudReady && getBinId()) debounceSync();
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(artworks)); } catch (_) {}
+  if (cloudReady) debounceSync();
 }
 
 const artworks = loadArtworks();
@@ -742,29 +692,20 @@ function showToast(msg) {
 //  ─── Render ───
 function render() {
   if (!artworks.length) {
-    grid.innerHTML = `<div class="empty">
-      <p>还没有画作</p>
-      <p class="hint">进入开发者模式上传你的作品</p>
-    </div>`;
+    grid.innerHTML = `<div class="empty"><p>还没有画作</p><p class="hint">进入开发者模式上传你的作品</p></div>`;
     counter.textContent = '0 幅作品';
     return;
   }
-
   grid.innerHTML = artworks.map((a, i) => `
     <div class="card" data-index="${i}">
       <img src="${a.src}" alt="${a.title}" loading="lazy" draggable="false">
       <button class="delete-btn" data-index="${i}" title="删除画作">
         <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
       </button>
-      <div class="info">
-        <div class="title">${a.title}</div>
-        <div class="meta">${a.desc}</div>
-      </div>
+      <div class="info"><div class="title">${a.title}</div><div class="meta">${a.desc}</div></div>
     </div>
   `).join('');
   counter.textContent = `${artworks.length} 幅作品`;
-
-  // Delete handlers
   document.querySelectorAll('.delete-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -784,7 +725,7 @@ function render() {
 }
 render();
 
-//  ─── Entry Lock (24小时免登录) ───
+//  ─── Entry Lock ───
 function isEntryValid() {
   try {
     const raw = localStorage.getItem(ENTRY_TOKEN_KEY);
@@ -793,22 +734,13 @@ function isEntryValid() {
     return Date.now() - t < ENTRY_EXPIRY;
   } catch (_) { return false; }
 }
-
-function markEntry() {
-  try { localStorage.setItem(ENTRY_TOKEN_KEY, JSON.stringify({ t: Date.now() })); } catch (_) {}
-}
-
-function showEntryLock() {
-  $('entryLock').classList.remove('hidden');
-  $('entryInput').value = '';
-  $('entryError').style.display = 'none';
-  $('entryInput').focus();
-}
+function markEntry() { try { localStorage.setItem(ENTRY_TOKEN_KEY, JSON.stringify({ t: Date.now() })); } catch (_) {} }
 
 if (isEntryValid()) {
   $('entryLock').classList.add('hidden');
 } else {
-  showEntryLock();
+  $('entryLock').classList.remove('hidden');
+  $('entryInput').focus();
 }
 
 function checkEntry() {
@@ -832,61 +764,29 @@ $('syncBtn').addEventListener('click', () => syncToCloud(false));
 function openLightbox(idx) {
   currentIdx = idx;
   const a = artworks[idx];
-  lbImg.src = a.src;
-  lbImg.alt = a.title;
-  lbTitle.textContent = a.title;
-  lbDesc.textContent = a.desc;
+  lbImg.src = a.src; lbImg.alt = a.title;
+  lbTitle.textContent = a.title; lbDesc.textContent = a.desc;
   lb.classList.add('open');
   document.body.style.overflow = 'hidden';
-
-  // Show edit + download only in dev mode
   $('lbActions').style.display = isDev ? 'flex' : 'none';
-
-  // Load like & comments
   renderSocial(idx);
 }
+function closeLightbox() { lb.classList.remove('open'); document.body.style.overflow = ''; }
+function prev() { if (!artworks.length) return; currentIdx = (currentIdx - 1 + artworks.length) % artworks.length; openLightbox(currentIdx); }
+function next() { if (!artworks.length) return; currentIdx = (currentIdx + 1) % artworks.length; openLightbox(currentIdx); }
 
-function closeLightbox() {
-  lb.classList.remove('open');
-  document.body.style.overflow = '';
-}
-
-function prev() {
-  if (!artworks.length) return;
-  currentIdx = (currentIdx - 1 + artworks.length) % artworks.length;
-  openLightbox(currentIdx);
-}
-function next() {
-  if (!artworks.length) return;
-  currentIdx = (currentIdx + 1) % artworks.length;
-  openLightbox(currentIdx);
-}
-
-grid.addEventListener('click', e => {
-  const card = e.target.closest('.card');
-  if (card) openLightbox(parseInt(card.dataset.index));
-});
-
+grid.addEventListener('click', e => { const card = e.target.closest('.card'); if (card) openLightbox(parseInt(card.dataset.index)); });
 $('lbClose').onclick = closeLightbox;
 $('lbPrev').onclick = prev;
 $('lbNext').onclick = next;
-
 document.addEventListener('keydown', e => {
-  if ($('unlockOverlay').classList.contains('open')) {
-    if (e.key === 'Enter') $('unlockConfirm').click();
-    if (e.key === 'Escape') $('unlockCancel').click();
-    return;
-  }
-  if ($('uploadOverlay').classList.contains('open') || $('editOverlay').classList.contains('open')) {
-    if (e.key === 'Escape') { $('uploadOverlay').classList.remove('open'); $('editOverlay').classList.remove('open'); }
-    return;
-  }
+  if ($('unlockOverlay').classList.contains('open')) { if (e.key === 'Enter') $('unlockConfirm').click(); if (e.key === 'Escape') $('unlockCancel').click(); return; }
+  if ($('uploadOverlay').classList.contains('open') || $('editOverlay').classList.contains('open')) { if (e.key === 'Escape') { $('uploadOverlay').classList.remove('open'); $('editOverlay').classList.remove('open'); } return; }
   if (!lb.classList.contains('open')) return;
   if (e.key === 'Escape') closeLightbox();
   if (e.key === 'ArrowLeft') prev();
   if (e.key === 'ArrowRight') next();
 });
-
 lb.addEventListener('click', e => { if (e.target === lb) closeLightbox(); });
 
 //  ─── Download ───
@@ -894,81 +794,36 @@ $('lbDownload').addEventListener('click', () => {
   if (!isDev) return;
   const a = artworks[currentIdx];
   const link = document.createElement('a');
-  link.href = a.src;
-  link.download = a.title || 'painting';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  showToast('正在下载');
+  link.href = a.src; link.download = a.title || 'painting';
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
 });
 
-//  ─── Like & Comments + 仲裁系统 ───
-const COMMENT_EXPIRY = 30 * 24 * 60 * 60 * 1000; // 30天
-const ARB_EXPIRY = 48 * 60 * 60 * 1000; // 48小时
+//  ─── Like & Comments + 仲裁 ───
+const COMMENT_EXPIRY = 30 * 24 * 60 * 60 * 1000;
+const ARB_EXPIRY = 48 * 60 * 60 * 1000;
 
 function getUserId() {
   let id = localStorage.getItem('gallery_user_id');
-  if (!id) {
-    id = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    localStorage.setItem('gallery_user_id', id);
-  }
+  if (!id) { id = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6); localStorage.setItem('gallery_user_id', id); }
   return id;
 }
 
 function loadSocial() {
   try {
     const raw = localStorage.getItem(SOCIAL_KEY);
-    if (raw) {
-      const data = JSON.parse(raw);
-      // 清理过期评论 + 处理过期仲裁
-      let changed = false;
-      Object.keys(data).forEach(pid => {
-        const d = data[pid];
-        if (!d.comments) return;
-        // 过滤过期评论
-        const before = d.comments.length;
-        d.comments = d.comments.filter(c => Date.now() - c.t < COMMENT_EXPIRY);
-        if (d.comments.length !== before) changed = true;
-        // 处理过期仲裁
-        d.comments.forEach(c => {
-          if (c.arb && Date.now() - c.arb.start > ARB_EXPIRY) {
-            // 超时无人过半数 -> 结束仲裁，保留评论，保持 arb 功能但标记为已结束
-            const votesDel = c.arb.votes.filter(v => v.vote === 'del').length;
-            const votesKeep = c.arb.votes.filter(v => v.vote === 'keep').length;
-            const total = new Set(c.arb.votes.map(v => v.voterId)).size;
-            if (total === 0) {
-              delete c.arb;
-            } else if (votesDel > total / 2) {
-              // 删评
-              d.comments = d.comments.filter(x => x !== c);
-              changed = true;
-            } else if (votesKeep > total / 2) {
-              // 保评 -> 精品置顶
-              c.pinned = true;
-              delete c.arb;
-            } else {
-              // 无人过半数 -> 结束仲裁，保持评论，保留仲裁功能但清空投票
-              c.arb = { start: c.arb.start, ended: true, votes: [] };
-            }
-            changed = true;
-          }
-        });
-      });
-      if (changed) localStorage.setItem(SOCIAL_KEY, JSON.stringify(data));
-      return data;
-    }
+    if (raw) return JSON.parse(raw);
   } catch (_) {}
   return {};
 }
 
 function saveSocial(data) {
   try { localStorage.setItem(SOCIAL_KEY, JSON.stringify(data)); } catch (_) {}
-  if (cloudReady && getBinId()) debounceSync();
+  if (cloudReady) debounceSync();
 }
 
-function getSocial(paintingId) {
+function getSocial(pid) {
   const all = loadSocial();
-  if (!all[paintingId]) all[paintingId] = { likes: 0, likedBy: [], comments: [] };
+  if (!all[pid]) all[pid] = { likes: 0, likedBy: [], comments: [] };
   return all;
 }
 
@@ -978,228 +833,85 @@ function renderSocial(idx) {
   const all = getSocial(pid);
   const data = all[pid];
   const userId = getUserId();
-
-  // Like
-  const hasLiked = data.likedBy.includes(userId);
   $('likeCount').textContent = data.likes;
-  $('likeBtn').classList.toggle('liked', hasLiked);
-
-  // Comments
+  $('likeBtn').classList.toggle('liked', data.likedBy.includes(userId));
   const valid = data.comments.filter(c => Date.now() - c.t < COMMENT_EXPIRY);
-  if (valid.length !== data.comments.length) {
-    data.comments = valid;
-    saveSocial(all);
-  }
-
+  if (valid.length !== data.comments.length) { data.comments = valid; saveSocial(all); }
   const cl = $('commentList');
-  if (valid.length === 0) {
-    cl.innerHTML = '<div class="empty-comment">暂无评论</div>';
-    return;
-  }
-
-  // 置顶评论优先
+  if (!valid.length) { cl.innerHTML = '<div class="empty-comment">暂无评论</div>'; return; }
   const sorted = [...valid].sort((a, b) => (a.pinned ? -1 : 1) - (b.pinned ? -1 : 1));
-
   cl.innerHTML = sorted.map((c, i) => {
-    const isOwner = c.uid === userId;
-    const isDev_ = isDev;
-    const hasArb = !!c.arb;
-    const isArbEnded = c.arb && c.arb.ended;
-
-    let html = `<div class="comment-item${c.pinned ? ' pinned' : ''}">`;
-    html += `<div class="text">${escapeHtml(c.text)}</div>`;
-    html += `<div class="meta">${formatTime(c.t)}`;
-    if (c.pinned) html += `<span class="tag">★ 精品</span>`;
-    if (hasArb && !isArbEnded) html += `<span class="del-tag">⚖ 仲裁中</span>`;
-    html += `</div>`;
-
-    // 操作按钮
-    html += `<div class="actions">`;
-    // 本人可删
-    if (isOwner) {
-      html += `<button class="del" data-arb-del="${i}">删除</button>`;
+    const isOwner = c.uid === userId, h = !!c.arb, e = c.arb && c.arb.ended;
+    let html = `<div class="comment-item${c.pinned?' pinned':''}"><div class="text">${esc(c.text)}</div><div class="meta">${fmt(c.t)}`;
+    if (c.pinned) html += '<span class="tag">★ 精品</span>';
+    if (h && !e) html += '<span class="del-tag">⚖ 仲裁中</span>';
+    html += '</div><div class="actions">';
+    if (isOwner) html += `<button class="del" data-arb-del="${i}">删除</button>`;
+    if (isDev) html += `<button class="del" data-arb-del="${i}">管理员删除</button>`;
+    if (!isOwner && !isDev && !h) html += `<button class="arb-on" data-arb-start="${i}">⚖ 仲裁</button>`;
+    html += '</div>';
+    if (h && !e) {
+      const votes = c.arb.votes||[], uV = new Set(votes.map(v=>v.voterId)), tv = uV.size;
+      const dc = votes.filter(v=>v.vote==='del').length, kc = votes.filter(v=>v.vote==='keep').length;
+      const my = votes.find(v=>v.voterId===userId);
+      const ac = new Set(valid.map(x=>x.uid)), ev = [...ac].filter(uid=>uid!==c.uid);
+      html += `<div class="arb-panel"><div class="title">⚖ 仲裁投票 (${fmtLeft(ARB_EXPIRY-(Date.now()-c.arb.start))})</div>`;
+      if (ev.includes(userId)) html += `<div class="vote-row"><button class="${my?.vote==='del'?'voted-del':''}" data-arb-vote="${i}|del">🗑 支持删除</button><button class="${my?.vote==='keep'?'voted-keep':''}" data-arb-vote="${i}|keep">⭐ 支持保留</button></div>`;
+      html += `<div class="stat">已投票: <span>${tv}</span> 人 | 删评 <span>${dc}</span> 票 · 保评 <span>${kc}</span> 票</div></div>`;
     }
-    // 开发者可删
-    if (isDev_) {
-      html += `<button class="del" data-arb-del="${i}">管理员删除</button>`;
-    }
-    // 仲裁按钮：其他人可发起仲裁（只有自己不是评论者、不是开发者、非本人、没有进行中的仲裁时显示）
-    if (!isOwner && !isDev_ && !hasArb) {
-      html += `<button class="arb-on" data-arb-start="${i}">⚖ 仲裁</button>`;
-    }
-    html += `</div>`;
-
-    // 仲裁面板
-    if (hasArb && !isArbEnded) {
-      const votes = c.arb.votes || [];
-      const uniqueVoters = new Set(votes.map(v => v.voterId));
-      const totalVoters = uniqueVoters.size;
-      const delCount = votes.filter(v => v.vote === 'del').length;
-      const keepCount = votes.filter(v => v.vote === 'keep').length;
-      const myVote = votes.find(v => v.voterId === userId);
-
-      // 本作品的评论者列表（去重设备）
-      const allCommenters = new Set(valid.map(x => x.uid));
-      // 可以投票的人：评论过这幅画的人（去重），且不是被仲裁评论的作者
-      const eligibleVoters = [...allCommenters].filter(uid => uid !== c.uid);
-      const isEligible = eligibleVoters.includes(userId);
-
-      html += `<div class="arb-panel">`;
-      html += `<div class="title">⚖ 仲裁投票 (${formatTimeLeft(ARB_EXPIRY - (Date.now() - c.arb.start))})</div>`;
-      if (isEligible) {
-        html += `<div class="vote-row">`;
-        html += `<button class="${myVote?.vote === 'del' ? 'voted-del' : ''}" data-arb-vote="${i}|del">🗑 支持删除</button>`;
-        html += `<button class="${myVote?.vote === 'keep' ? 'voted-keep' : ''}" data-arb-vote="${i}|keep">⭐ 支持保留</button>`;
-        html += `</div>`;
-      }
-      html += `<div class="stat">已投票: <span>${totalVoters}</span> 人 | 删评 <span>${delCount}</span> 票 · 保评 <span>${keepCount}</span> 票</div>`;
-      html += `</div>`;
-    }
-
-    html += `</div>`;
-    return html;
+    return html + '</div>';
   }).join('');
 }
 
-function formatTimeLeft(ms) {
-  if (ms <= 0) return '已结束';
-  const h = Math.floor(ms / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  return `剩余 ${h}小时${m}分`;
-}
+function fmtLeft(ms) { if (ms<=0) return '已结束'; return `剩余 ${Math.floor(ms/3600000)}小时${Math.floor((ms%3600000)/60000)}分`; }
+function esc(s) { const e=document.createElement('div'); e.textContent=s; return e.innerHTML; }
+function fmt(ts) { const d=Date.now()-ts,dd=Math.floor(d/86400000); if(dd>0)return dd+'天前';const hh=Math.floor(d/3600000);if(hh>0)return hh+'小时前';return Math.max(1,Math.floor(d/60000))+'分钟前'; }
 
-function escapeHtml(s) {
-  const el = document.createElement('div');
-  el.textContent = s;
-  return el.innerHTML;
-}
-
-function formatTime(ts) {
-  const diff = Date.now() - ts;
-  const days = Math.floor(diff / 86400000);
-  if (days > 0) return days + '天前';
-  const hours = Math.floor(diff / 3600000);
-  if (hours > 0) return hours + '小时前';
-  const mins = Math.floor(diff / 60000);
-  return Math.max(1, mins) + '分钟前';
-}
-
-// Like
 $('likeBtn').addEventListener('click', () => {
-  if (currentIdx < 0) return;
-  const pid = currentIdx.toString();
-  const all = getSocial(pid);
-  const userId = getUserId();
-  const data = all[pid];
-  if (data.likedBy.includes(userId)) {
-    data.likes--;
-    data.likedBy = data.likedBy.filter(id => id !== userId);
-  } else {
-    data.likes++;
-    data.likedBy.push(userId);
-  }
-  saveSocial(all);
-  renderSocial(currentIdx);
+  if (currentIdx<0) return;
+  const all = getSocial(currentIdx.toString()), uid = getUserId(), d = all[currentIdx.toString()];
+  if (d.likedBy.includes(uid)) { d.likes--; d.likedBy = d.likedBy.filter(id=>id!==uid); }
+  else { d.likes++; d.likedBy.push(uid); }
+  saveSocial(all); renderSocial(currentIdx);
 });
 
-// Comment submit
 $('commentBtn').addEventListener('click', () => {
-  if (currentIdx < 0) return;
-  const input = $('commentInput');
-  const text = input.value.trim();
+  if (currentIdx<0) return;
+  const input = $('commentInput'), text = input.value.trim();
   if (!text) return;
-  const pid = currentIdx.toString();
-  const all = getSocial(pid);
-  all[pid].comments.push({ text, t: Date.now(), uid: getUserId() });
-  saveSocial(all);
-  input.value = '';
-  renderSocial(currentIdx);
+  const all = getSocial(currentIdx.toString());
+  all[currentIdx.toString()].comments.push({ text, t: Date.now(), uid: getUserId() });
+  saveSocial(all); input.value = ''; renderSocial(currentIdx);
 });
-$('commentInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') $('commentBtn').click();
-});
+$('commentInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('commentBtn').click(); });
 
-// 评论操作委托事件（删除、仲裁、投票）
 $('commentList').addEventListener('click', e => {
-  const target = e.target;
-  const pid = currentIdx.toString();
-  const all = getSocial(pid);
-  const data = all[pid];
-
-  // 删除
-  if (target.dataset.arbDel !== undefined) {
-    const idx = parseInt(target.dataset.arbDel);
-    const valid = data.comments.filter(c => Date.now() - c.t < COMMENT_EXPIRY);
-    // 找到实际索引（跳过已过期）
-    const realIdx = data.comments.indexOf(valid[idx]);
-    if (realIdx === -1) return;
-    data.comments.splice(realIdx, 1);
-    saveSocial(all);
-    renderSocial(currentIdx);
-    showToast('评论已删除');
+  const t = e.target, pid = currentIdx.toString(), all = getSocial(pid), data = all[pid];
+  if (t.dataset.arbDel !== undefined) {
+    const idx = parseInt(t.dataset.arbDel), valid = data.comments.filter(c=>Date.now()-c.t<COMMENT_EXPIRY);
+    const ri = data.comments.indexOf(valid[idx]); if (ri===-1) return;
+    data.comments.splice(ri,1); saveSocial(all); renderSocial(currentIdx); showToast('评论已删除');
     return;
   }
-
-  // 发起仲裁
-  if (target.dataset.arbStart !== undefined) {
-    const idx = parseInt(target.dataset.arbStart);
-    const valid = data.comments.filter(c => Date.now() - c.t < COMMENT_EXPIRY);
-    const realIdx = data.comments.indexOf(valid[idx]);
-    if (realIdx === -1) return;
-    if (data.comments[realIdx].arb) return;
-    data.comments[realIdx].arb = { start: Date.now(), votes: [], ended: false };
-    saveSocial(all);
-    renderSocial(currentIdx);
-    showToast('已发起仲裁，等待其他评论者投票');
+  if (t.dataset.arbStart !== undefined) {
+    const idx = parseInt(t.dataset.arbStart), valid = data.comments.filter(c=>Date.now()-c.t<COMMENT_EXPIRY);
+    const ri = data.comments.indexOf(valid[idx]); if (ri===-1||data.comments[ri].arb) return;
+    data.comments[ri].arb = { start: Date.now(), votes: [], ended: false };
+    saveSocial(all); renderSocial(currentIdx); showToast('已发起仲裁');
     return;
   }
-
-  // 仲裁投票
-  if (target.dataset.arbVote !== undefined) {
-    const [idxStr, vote] = target.dataset.arbVote.split('|');
-    const idx = parseInt(idxStr);
-    const valid = data.comments.filter(c => Date.now() - c.t < COMMENT_EXPIRY);
-    const realIdx = data.comments.indexOf(valid[idx]);
-    if (realIdx === -1) return;
-    const c = data.comments[realIdx];
-    if (!c.arb || c.arb.ended) return;
-    if (Date.now() - c.arb.start > ARB_EXPIRY) return;
-
-    const userId = getUserId();
-    const existing = c.arb.votes.findIndex(v => v.voterId === userId);
-    if (existing !== -1) {
-      c.arb.votes[existing].vote = vote;
-    } else {
-      c.arb.votes.push({ voterId: userId, vote });
-    }
-
-    // 检查是否过半数
-    const uniqueVoters = new Set(c.arb.votes.map(v => v.voterId));
-    const total = uniqueVoters.size;
-    const delCount = c.arb.votes.filter(v => v.vote === 'del').length;
-    const keepCount = c.arb.votes.filter(v => v.vote === 'keep').length;
-
-    if (delCount > total / 2) {
-      // 删评
-      data.comments.splice(realIdx, 1);
-      saveSocial(all);
-      renderSocial(currentIdx);
-      showToast('仲裁结果：评论已被删除');
-      return;
-    }
-    if (keepCount > total / 2) {
-      // 保评 -> 精品置顶
-      c.pinned = true;
-      delete c.arb;
-      saveSocial(all);
-      renderSocial(currentIdx);
-      showToast('仲裁结果：评论已被设为精品置顶');
-      return;
-    }
-
-    saveSocial(all);
-    renderSocial(currentIdx);
-    return;
+  if (t.dataset.arbVote !== undefined) {
+    const [is, vote] = t.dataset.arbVote.split('|'), idx = parseInt(is);
+    const valid = data.comments.filter(c=>Date.now()-c.t<COMMENT_EXPIRY);
+    const ri = data.comments.indexOf(valid[idx]); if (ri===-1) return;
+    const c = data.comments[ri]; if (!c.arb||c.arb.ended||Date.now()-c.arb.start>ARB_EXPIRY) return;
+    const uid = getUserId(), ei = c.arb.votes.findIndex(v=>v.voterId===uid);
+    if (ei!==-1) c.arb.votes[ei].vote = vote; else c.arb.votes.push({ voterId: uid, vote });
+    const uV = new Set(c.arb.votes.map(v=>v.voterId)), total = uV.size;
+    const dc = c.arb.votes.filter(v=>v.vote==='del').length, kc = c.arb.votes.filter(v=>v.vote==='keep').length;
+    if (dc > total/2) { data.comments.splice(ri,1); saveSocial(all); renderSocial(currentIdx); showToast('仲裁结果：评论已删除'); return; }
+    if (kc > total/2) { c.pinned=true; delete c.arb; saveSocial(all); renderSocial(currentIdx); showToast('仲裁结果：评论已设为精品置顶'); return; }
+    saveSocial(all); renderSocial(currentIdx);
   }
 });
 
@@ -1213,7 +925,6 @@ $('modeVisitor').addEventListener('click', () => {
   if (lb.classList.contains('open')) $('lbActions').style.display = 'none';
   showToast('已切换到访客模式');
 });
-
 $('modeDev').addEventListener('click', () => {
   if (isDev) return;
   $('unlockOverlay').classList.add('open');
@@ -1221,98 +932,44 @@ $('modeDev').addEventListener('click', () => {
   $('unlockError').style.display = 'none';
   setTimeout(() => $('unlockInput').focus(), 100);
 });
-
 function unlockDev() {
-  const val = $('unlockInput').value;
-  if (val === PASSWORD) {
+  if ($('unlockInput').value === PASSWORD) {
     isDev = true;
     document.body.classList.add('dev-mode');
     $('modeDev').classList.add('active');
     $('modeVisitor').classList.remove('active');
     $('unlockOverlay').classList.remove('open');
     if (lb.classList.contains('open')) $('lbActions').style.display = 'flex';
-    // 显示同步按钮
     $('syncBtn').style.display = 'inline-flex';
     showToast('已解锁开发者模式');
-  } else {
-    $('unlockError').style.display = 'block';
-    $('unlockInput').select();
-  }
+  } else { $('unlockError').style.display = 'block'; $('unlockInput').select(); }
 }
-
 $('unlockConfirm').addEventListener('click', unlockDev);
 $('unlockInput').addEventListener('keydown', e => { if (e.key === 'Enter') unlockDev(); });
 $('unlockCancel').addEventListener('click', () => $('unlockOverlay').classList.remove('open'));
 
 //  ─── Upload ───
-$('uploadCancel').addEventListener('click', () => {
-  $('uploadOverlay').classList.remove('open');
-  $('uploadFileInput').value = '';
-  $('uploadTitle').value = '';
-  $('uploadDesc').value = '';
-});
-
+$('uploadCancel').addEventListener('click', () => { $('uploadOverlay').classList.remove('open'); $('uploadFileInput').value=''; $('uploadTitle').value=''; $('uploadDesc').value=''; });
 $('uploadConfirm').addEventListener('click', () => {
-  const file = $('uploadFileInput').files[0];
-  const title = $('uploadTitle').value.trim() || '未命名';
-  const desc = $('uploadDesc').value.trim();
+  const file = $('uploadFileInput').files[0], title = $('uploadTitle').value.trim()||'未命名', desc = $('uploadDesc').value.trim();
   if (!file) { showToast('请选择图片'); return; }
-
   const reader = new FileReader();
-  reader.onload = (e) => {
-    artworks.push({ src: e.target.result, title, desc });
-        saveArtworks();
-    render();
-    $('uploadOverlay').classList.remove('open');
-    $('uploadFileInput').value = '';
-    $('uploadTitle').value = '';
-    $('uploadDesc').value = '';
-    showToast('上传成功');
-  };
+  reader.onload = (e) => { artworks.push({src:e.target.result,title,desc}); saveArtworks(); render(); $('uploadOverlay').classList.remove('open'); $('uploadFileInput').value=''; $('uploadTitle').value=''; $('uploadDesc').value=''; showToast('上传成功'); };
   reader.readAsDataURL(file);
 });
 
 //  ─── Edit ───
 $('editCancel').addEventListener('click', () => $('editOverlay').classList.remove('open'));
 $('editConfirm').addEventListener('click', () => {
-  const title = $('editTitle').value.trim() || '未命名';
-  const desc = $('editDesc').value.trim();
-  artworks[editIndex].title = title;
-  artworks[editIndex].desc = desc;
-  saveArtworks();
-  render();
-  openLightbox(editIndex);
-  $('editOverlay').classList.remove('open');
-  showToast('已更新');
+  const title = $('editTitle').value.trim()||'未命名', desc = $('editDesc').value.trim();
+  artworks[editIndex].title = title; artworks[editIndex].desc = desc; saveArtworks(); render(); openLightbox(editIndex); $('editOverlay').classList.remove('open'); showToast('已更新');
 });
 
 //  ─── Floating dev toolbar ───
-// 在开发者模式下，右下角添加上传浮动按钮
 const fab = document.createElement('div');
-fab.innerHTML = `
-<style>
-.fab {
-  position: fixed; bottom: 28px; right: 28px; z-index: 90;
-  width: 52px; height: 52px; border-radius: 50%;
-  background: #c8a078; border: none; cursor: pointer;
-  display: none; align-items: center; justify-content: center;
-  box-shadow: 0 4px 16px rgba(200,160,120,.3);
-  transition: transform .2s, box-shadow .2s;
-}
-.fab:hover { transform: scale(1.08); box-shadow: 0 6px 24px rgba(200,160,120,.4); }
-.fab svg { width: 24px; height: 24px; fill: #0a0a0a; }
-.dev-mode .fab { display: flex; }
-@media (max-width:640px){ .fab { bottom: 18px; right: 18px; width: 48px; height: 48px; } }
-</style>
-<button class="fab" id="fabUpload" title="上传画作">
-  <svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
-</button>
-`;
+fab.innerHTML = `<style>.fab{position:fixed;bottom:28px;right:28px;z-index:90;width:52px;height:52px;border-radius:50%;background:#c8a078;border:none;cursor:pointer;display:none;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(200,160,120,.3);transition:transform .2s,box-shadow .2s}.fab:hover{transform:scale(1.08);box-shadow:0 6px 24px rgba(200,160,120,.4)}.fab svg{width:24px;height:24px;fill:#0a0a0a}.dev-mode .fab{display:flex}@media(max-width:640px){.fab{bottom:18px;right:18px;width:48px;height:48px}}</style><button class="fab" id="fabUpload" title="上传画作"><svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg></button>`;
 document.body.appendChild(fab);
-$('fabUpload').addEventListener('click', () => {
-  if (!isDev) return;
-  $('uploadOverlay').classList.add('open');
-});
+$('fabUpload').addEventListener('click', () => { if (!isDev) return; $('uploadOverlay').classList.add('open'); });
 </script>
 </body>
 </html>
